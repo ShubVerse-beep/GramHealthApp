@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../l10n/app_language.dart';
 import '../theme/app_colors.dart';
-import '../widgets/glass_card.dart';
-import '../widgets/custom_input.dart';
-import '../widgets/language_selector_modal.dart';
-import '../widgets/primary_button.dart';
+import '../widgets/gh_ui.dart';
 import '../services/api_client.dart';
 import '../utils/auth_guard.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
@@ -44,14 +41,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.redAccent,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded,
+                  color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.emergency,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
   }
 
   void _navigateByRole(String role) {
@@ -203,39 +216,68 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _submitFromKeyboard() {
+    if (!_isLoading) _handleContinue();
+  }
+
+  void _toggleMode() {
+    FocusScope.of(context).unfocus();
+    setState(() => _isRegistering = !_isRegistering);
+  }
+
   // ── Role Card ─────────────────────────────────────────────────────────────
 
   Widget _buildRoleCard(String role, IconData icon, String title) {
     final isSelected = _selectedRole == role;
+    final radius = BorderRadius.circular(GhTokens.radiusSm);
     return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedRole = role),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.primaryAccent : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? AppColors.primaryAccent : Colors.grey[300]!,
+      child: Semantics(
+        button: true,
+        selected: isSelected,
+        child: Material(
+          color: isSelected ? AppColors.leafGreenPale : GhTokens.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(
+              color:
+                  isSelected ? AppColors.leafGreenPrimary : GhTokens.border,
+              width: isSelected ? 1.6 : 1,
             ),
           ),
-          child: Column(
-            children: [
-              Icon(icon,
-                  color: isSelected ? Colors.white : AppColors.textDark,
-                  size: 24),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : AppColors.textDark,
-                ),
+          child: InkWell(
+            borderRadius: radius,
+            onTap: () => setState(() => _selectedRole = role),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: isSelected
+                        ? AppColors.leafGreenPrimary
+                        : AppColors.textMedium,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w600,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                  if (isSelected)
+                    const Icon(Icons.check_circle_rounded,
+                        size: 18, color: AppColors.leafGreenPrimary),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -247,207 +289,58 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      backgroundColor: AppColors.secondaryBg,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 960;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isWide) const Expanded(flex: 5, child: _BrandPanel()),
+              Expanded(flex: 6, child: _buildFormArea(isWide)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFormArea(bool isWide) {
+    return SafeArea(
+      child: Column(
         children: [
-          // Background image
-          Positioned.fill(
-            child: Image.network(
-              'https://images.unsplash.com/photo-1576091160550-217359f4ecf8?auto=format&fit=crop&q=80&w=2070',
-              fit: BoxFit.cover,
-              color: Colors.white.withValues(alpha: 0.85),
-              colorBlendMode: BlendMode.lighten,
-              errorBuilder: (_, __, ___) =>
-                  Container(color: Colors.white),
-            ),
-          ),
-
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  // Language switcher
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: GestureDetector(
-                      onTap: () => showLanguageSelector(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [
-                            BoxShadow(
-                                color: Color(0x1A000000),
-                                blurRadius: 6,
-                                offset: Offset(0, 2)),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.language,
-                                size: 18, color: AppColors.textDark),
-                            const SizedBox(width: 6),
-                            Text(
-                              context.currentLanguage.nativeName,
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textDark),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 30),
-
-                  // Logo
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: AppColors.textDark,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(Icons.add_box_outlined,
-                        size: 32, color: AppColors.primaryAccent),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Text(
-                    _isRegistering
-                        ? context.tr('create_account')
-                        : context.tr('welcome_back'),
-                    style: const TextStyle(
-                      fontSize: 30,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
+              children: [
+                if (!isWide) ...[
+                  const GhLogoMark(size: 36),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'RuralCare',
+                    style: TextStyle(
+                      fontSize: 18,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textDark,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _isRegistering
-                        ? context.tr('register_desc')
-                        : context.tr('signin_desc'),
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textDark.withValues(alpha: 0.6)),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Form card
-                  GlassCard(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      children: [
-                        // Role selection (only for registration)
-                        if (_isRegistering) ...[
-                          Text(
-                            'Select your role:',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color:
-                                  AppColors.textDark.withValues(alpha: 0.7),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              _buildRoleCard(
-                                  'patient', Icons.person_outline, 'User'),
-                              _buildRoleCard('doctor',
-                                  Icons.local_hospital_outlined, 'Doctor'),
-                              _buildRoleCard(
-                                  'admin',
-                                  Icons.admin_panel_settings_outlined,
-                                  'Admin'),
-                              _buildRoleCard(
-                                  'pharmacy',
-                                  Icons.local_pharmacy_outlined,
-                                  'Pharmacy'),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          CustomInput(
-                            label: 'Full Name',
-                            placeholder: 'Enter your full name',
-                            controller: _nameCtrl,
-                          ),
-                          CustomInput(
-                            label: 'Phone',
-                            placeholder: 'Enter your phone number',
-                            controller: _phoneCtrl,
-                          ),
-                          if (_selectedRole == 'pharmacy')
-                            CustomInput(
-                              label: 'Pharmacy Address',
-                              placeholder: 'Enter full pharmacy address (e.g., Street, City)',
-                              controller: _addressCtrl,
-                            ),
-                        ],
-
-                        CustomInput(
-                          label: _isRegistering ? 'Email' : 'Email or Phone',
-                          placeholder: _isRegistering ? 'Enter your email address' : 'Enter your email or phone',
-                          controller: _emailCtrl,
-                        ),
-                        CustomInput(
-                          label: context.tr('password'),
-                          placeholder: context.tr('enter_password'),
-                          controller: _passwordCtrl,
-                          obscureText: true,
-                        ),
-                        if (_isRegistering)
-                          CustomInput(
-                            label: context.tr('confirm_password'),
-                            placeholder: context.tr('repeat_password'),
-                            controller: _confirmCtrl,
-                            obscureText: true,
-                          ),
-
-                        const SizedBox(height: 8),
-
-                        // Submit button
-                        _isLoading
-                            ? const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 12),
-                                child: CircularProgressIndicator(),
-                              )
-                            : PrimaryButton(
-                                title: _isRegistering
-                                    ? context.tr('register_btn')
-                                    : context.tr('continue_btn'),
-                                onPress: _handleContinue,
-                                width: double.infinity,
-                              ),
-
-                        const SizedBox(height: 24),
-                        GestureDetector(
-                          onTap: () => setState(
-                              () => _isRegistering = !_isRegistering),
-                          child: Text(
-                            _isRegistering
-                                ? context.tr('already_have_account')
-                                : context.tr('register_new_account'),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textDark,
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                      ],
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ],
+                const Spacer(),
+                const GhLanguageChip(),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: AutofillGroup(child: _buildForm()),
+                ),
               ),
             ),
           ),
@@ -455,4 +348,278 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+
+  Widget _buildForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          _isRegistering
+              ? context.tr('create_account')
+              : context.tr('welcome_back'),
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textDark,
+            letterSpacing: -0.6,
+            height: 1.15,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _isRegistering
+              ? context.tr('register_desc')
+              : context.tr('signin_desc'),
+          style: const TextStyle(
+            fontSize: 15,
+            height: 1.45,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: GhTokens.surface,
+            borderRadius: BorderRadius.circular(GhTokens.radiusLg),
+            border: Border.all(color: GhTokens.border),
+            boxShadow: GhTokens.shadowSm,
+          ),
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_isRegistering) ...[
+                  const Text(
+                    'Select your role',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _buildRoleCard('patient', Icons.person_outline, 'User'),
+                      const SizedBox(width: 10),
+                      _buildRoleCard('doctor',
+                          Icons.local_hospital_outlined, 'Doctor'),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _buildRoleCard('admin',
+                          Icons.admin_panel_settings_outlined, 'Admin'),
+                      const SizedBox(width: 10),
+                      _buildRoleCard('pharmacy',
+                          Icons.local_pharmacy_outlined, 'Pharmacy'),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  GhTextField(
+                    key: const ValueKey('field_name'),
+                    label: 'Full Name',
+                    hint: 'Enter your full name',
+                    controller: _nameCtrl,
+                    icon: Icons.person_outline_rounded,
+                    keyboardType: TextInputType.name,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.name],
+                  ),
+                  GhTextField(
+                    key: const ValueKey('field_phone'),
+                    label: 'Phone',
+                    hint: 'Enter your phone number',
+                    controller: _phoneCtrl,
+                    icon: Icons.phone_outlined,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.telephoneNumber],
+                  ),
+                  if (_selectedRole == 'pharmacy')
+                    GhTextField(
+                      key: const ValueKey('field_address'),
+                      label: 'Pharmacy Address',
+                      hint: 'Street, City',
+                      helperText:
+                          'Used to place your pharmacy on the map for patients.',
+                      controller: _addressCtrl,
+                      icon: Icons.location_on_outlined,
+                      keyboardType: TextInputType.streetAddress,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.fullStreetAddress],
+                    ),
+                ],
+                GhTextField(
+                  key: const ValueKey('field_email'),
+                  label: _isRegistering ? 'Email' : 'Email or Phone',
+                  hint: _isRegistering
+                      ? 'Enter your email address'
+                      : 'Enter your email or phone',
+                  controller: _emailCtrl,
+                  icon: Icons.mail_outline_rounded,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
+                ),
+                GhTextField(
+                  key: const ValueKey('field_password'),
+                  label: context.tr('password'),
+                  hint: context.tr('enter_password'),
+                  helperText:
+                      _isRegistering ? 'Use at least 8 characters.' : null,
+                  controller: _passwordCtrl,
+                  icon: Icons.lock_outline_rounded,
+                  isPassword: true,
+                  textInputAction: _isRegistering
+                      ? TextInputAction.next
+                      : TextInputAction.done,
+                  onSubmitted:
+                      _isRegistering ? null : (_) => _submitFromKeyboard(),
+                  autofillHints: [
+                    _isRegistering
+                        ? AutofillHints.newPassword
+                        : AutofillHints.password,
+                  ],
+                ),
+                if (_isRegistering)
+                  GhTextField(
+                    key: const ValueKey('field_confirm'),
+                    label: context.tr('confirm_password'),
+                    hint: context.tr('repeat_password'),
+                    controller: _confirmCtrl,
+                    icon: Icons.lock_outline_rounded,
+                    isPassword: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submitFromKeyboard(),
+                    autofillHints: const [AutofillHints.newPassword],
+                  ),
+                const SizedBox(height: 8),
+                GhPrimaryButton(
+                  label: _isRegistering
+                      ? context.tr('register_btn')
+                      : context.tr('continue_btn'),
+                  onPressed: _handleContinue,
+                  loading: _isLoading,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: TextButton(
+            onPressed: _isLoading ? null : _toggleMode,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.leafGreenPrimary,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              textStyle:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            child: Text(
+              _isRegistering
+                  ? context.tr('already_have_account')
+                  : context.tr('register_new_account'),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
+
+class _BrandPanel extends StatelessWidget {
+  const _BrandPanel();
+
+  Widget _feature(IconData icon, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(GhTokens.radiusSm),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            child: Icon(icon, size: 20, color: AppColors.leafGreenAccent),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(gradient: AppColors.leafGradientHero),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(48),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  GhLogoMark(size: 40),
+                  SizedBox(width: 12),
+                  Text(
+                    'RuralCare',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: const Text(
+                  'Smart Healthcare for Rural Communities',
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: 1.15,
+                    letterSpacing: -0.8,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              _feature(Icons.monitor_heart_outlined,
+                  context.tr('service_consult')),
+              _feature(Icons.search_rounded, context.tr('service_symptoms')),
+              _feature(Icons.local_pharmacy_outlined,
+                  context.tr('service_medicine')),
+              const Spacer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

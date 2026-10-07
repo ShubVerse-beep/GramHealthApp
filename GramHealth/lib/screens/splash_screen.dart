@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../l10n/app_language.dart';
 import '../theme/app_colors.dart';
-import '../widgets/primary_button.dart';
+import '../widgets/gh_ui.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,164 +12,127 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _logoCtrl;
-  late AnimationController _textCtrl;
-  late Animation<double> _logoScale;
-  late Animation<double> _textOpacity;
-  late Animation<double> _textSlide;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _logoOpacity;
+  late final Animation<double> _textOpacity;
+  late final Animation<Offset> _textSlide;
+  late final Animation<double> _ctaOpacity;
 
   @override
   void initState() {
     super.initState();
-
-    _logoCtrl = AnimationController(
+    _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true);
-
-    _logoScale = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(parent: _logoCtrl, curve: Curves.easeInOut),
+      duration: const Duration(milliseconds: 1400),
     );
 
-    _textCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
+    _logoScale = Tween<double>(begin: 0.85, end: 1).animate(CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0, 0.5, curve: Curves.easeOutBack),
+    ));
+    _logoOpacity = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0, 0.35, curve: Curves.easeOut),
+    );
+    _textOpacity = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.3, 0.7, curve: Curves.easeOut),
+    );
+    _textSlide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+        .animate(CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.3, 0.75, curve: Curves.easeOutCubic),
+    ));
+    _ctaOpacity = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.6, 1, curve: Curves.easeOut),
     );
 
-    _textOpacity = Tween<double>(begin: 0, end: 1).animate(_textCtrl);
-    _textSlide = Tween<double>(begin: 20, end: 0).animate(
-      CurvedAnimation(parent: _textCtrl, curve: Curves.easeOut),
-    );
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _textCtrl.forward();
-    });
+    _ctrl.forward();
   }
 
   @override
   void dispose() {
-    _logoCtrl.dispose();
-    _textCtrl.dispose();
+    _ctrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
+      backgroundColor: AppColors.primaryBg,
+      body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [AppColors.primaryBg, AppColors.primaryAccent],
+            colors: [AppColors.primaryBg, AppColors.leafBg],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
         child: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Spacer(),
-              // Glow + Logo
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Glow ring
-                  ScaleTransition(
-                    scale: _logoScale,
-                    child: Container(
-                      width: 140,
-                      height: 140,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.primaryAccent.withOpacity(0.3),
-                      ),
-                    ),
-                  ),
-                  // Logo circle
-                  ScaleTransition(
-                    scale: _logoScale,
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.textDark,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primaryAccent.withOpacity(0.5),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.favorite,
-                        size: 60,
-                        color: AppColors.primaryAccent,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-
-              // Title + tagline
-              AnimatedBuilder(
-                animation: _textCtrl,
-                builder: (_, child) => Opacity(
-                  opacity: _textOpacity.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _textSlide.value),
-                    child: child,
-                  ),
-                ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
                 child: Column(
                   children: [
-                    Text(
-                      'RuralCare',
-                      style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                        letterSpacing: -0.5,
+                    const Spacer(flex: 3),
+                    FadeTransition(
+                      opacity: _logoOpacity,
+                      child: ScaleTransition(
+                        scale: _logoScale,
+                        child: const GhLogoMark(size: 88),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Smart Healthcare for Rural Communities',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textDark.withOpacity(0.8),
+                    const SizedBox(height: 28),
+                    FadeTransition(
+                      opacity: _textOpacity,
+                      child: SlideTransition(
+                        position: _textSlide,
+                        child: Column(
+                          children: [
+                            const Text(
+                              'RuralCare',
+                              style: TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark,
+                                letterSpacing: -0.8,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Smart Healthcare for Rural Communities',
+                              style: TextStyle(
+                                fontSize: 16,
+                                height: 1.45,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textMedium
+                                    .withValues(alpha: 0.85),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
-                      textAlign: TextAlign.center,
+                    ),
+                    const Spacer(flex: 4),
+                    FadeTransition(
+                      opacity: _ctaOpacity,
+                      child: GhPrimaryButton(
+                        label: context.tr('get_started'),
+                        trailingIcon: Icons.arrow_forward_rounded,
+                        onPressed: () => context.go('/onboarding'),
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Spacer(),
-              
-              // Get Started Button
-              AnimatedBuilder(
-                animation: _textCtrl,
-                builder: (_, child) => Opacity(
-                  opacity: _textOpacity.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _textSlide.value),
-                    child: child,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-                  child: PrimaryButton(
-                    title: 'Get Started',
-                    onPress: () => context.go('/onboarding'),
-                    width: double.infinity,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

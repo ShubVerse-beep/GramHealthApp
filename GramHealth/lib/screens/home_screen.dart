@@ -1,11 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../l10n/app_language.dart';
 import '../theme/app_colors.dart';
-import '../widgets/glass_card.dart';
-import '../widgets/language_selector_modal.dart';
+import '../widgets/gh_ui.dart';
 import '../services/auth_service.dart';
 import '../services/doctor_service.dart';
 import '../services/consultation_service.dart';
@@ -161,436 +161,162 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  static const double _maxContentWidth = 1100;
+  static const double _hPad = 20;
+
+  String get _displayName {
+    if (_userName.isEmpty) return '';
+    return _userName
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .map((p) => p[0] + p.substring(1).toLowerCase())
+        .join(' ');
+  }
+
+  Future<void> _onConsultationAction(ConsultationModel c) async {
+    if (ConnectivityService.instance.currentStatus == NetworkStatus.offline) {
+      showDialog(
+        context: context,
+        builder: (context) => VoiceNoteDialog(consultationId: c.id),
+      );
+    } else {
+      await CallService.startCall(
+        consultationId: c.id,
+        audioOnly: c.type.toUpperCase() == 'AUDIO',
+      );
+      // Automatically hide the consultation from the dashboard once the call loop finishes
+      if (mounted) {
+        setState(() {
+          _activeConsultations.removeWhere((item) => item.id == c.id);
+        });
+      }
+      // Secretly tell backend we completed it so it doesn't reappear
+      try {
+        await ConsultationService.updateStatus(c.id, 'COMPLETED');
+      } catch (_) {}
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final screenW = MediaQuery.sizeOf(context).width;
+    final contentW = math.min(screenW, _maxContentWidth);
+    final topInset = MediaQuery.paddingOf(context).top;
+
     return Scaffold(
       backgroundColor: AppColors.secondaryBg,
       body: Stack(
         children: [
           SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 120),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const ConnectivityBadge(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              context.tr('greeting'),
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.textDark.withValues(alpha: 0.6),
-                              ),
-                            ),
-                            Text(
-                              '${_userName.isEmpty ? context.tr('greeting') : _userName} 👋',
-                              style: const TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textDark,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          // Language Switcher Button
-                          GestureDetector(
-                            onTap: () => showLanguageSelector(context),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: const [
-                                  BoxShadow(
-                                      color: Color(0x14000000), blurRadius: 4)
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.language,
-                                      size: 18, color: AppColors.textDark),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    context.currentLanguage.nativeName,
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textDark),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _iconButton(Icons.notifications_none_outlined,
-                              () => context.push('/notifications')),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () => context.go('/main/profile'),
-                            child: CircleAvatar(
-                              radius: 22,
-                              backgroundColor: AppColors.primaryAccent,
-                              child: Text(
-                                _userName.isNotEmpty
-                                    ? _userName[0]
-                                    : '?',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ], // row children close
-                  ), // row close
-                ], // column children close
-              ), // column close
-            ), // container close
+            padding: EdgeInsets.only(top: topInset + 12, bottom: 128),
+            child: Center(
+              child: SizedBox(
+                width: contentW,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 20),
+                    _buildBanner(),
+                    const SizedBox(height: 16),
 
-                // Banner
-                Container(
-                  margin: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-                  height: 160,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primaryAccent, Colors.white],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                    // Offline AI Background Status / Progress Banner
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: OfflineSetupCard(),
                     ),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x22000000),
-                          blurRadius: 10,
-                          offset: Offset(0, 4))
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        right: -10,
-                        bottom: -10,
-                        child: Icon(Icons.shield_outlined,
-                            size: 80,
-                            color: Colors.white.withValues(alpha: 0.3)),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              context.tr('free_checkup'),
-                              style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              context.tr('checkup_subtitle'),
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: AppColors.textDark
-                                      .withValues(alpha: 0.8)),
-                            ),
-                            const SizedBox(height: 12),
-                            GestureDetector(
-                              onTap: () => context.push('/notifications'),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                    color: AppColors.textDark,
-                                    borderRadius: BorderRadius.circular(8)),
-                                child: Text(
-                                  context.tr('learn_more'),
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
 
-                // Offline AI Background Status / Progress Banner
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: OfflineSetupCard(),
-                ),
+                    if (!_loadingConsultations &&
+                        _activeConsultations.isNotEmpty)
+                      _buildActiveConsultations(),
 
-                // Active Consultations
-                if (!_loadingConsultations && _activeConsultations.isNotEmpty) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                    child: Text(
-                      'Your Active Consultations',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.textDark),
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                      child: GhSectionHeader(title: context.tr('our_services')),
                     ),
-                  ),
-                  ..._activeConsultations.map((c) => Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFEEEEEE)),
-                        boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 4))],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryAccent.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(c.type.toUpperCase() == 'AUDIO' ? Icons.call : Icons.videocam, color: AppColors.primaryAccent),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  c.reason.isNotEmpty ? c.reason : 'Consultation',
-                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textDark),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Ready to join',
-                                  style: TextStyle(fontSize: 12, color: AppColors.textDark.withValues(alpha: 0.6)),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton(
-                            onPressed: () async {
-                              if (ConnectivityService.instance.currentStatus == NetworkStatus.offline) {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => VoiceNoteDialog(consultationId: c.id),
-                                );
-                              } else {
-                                await CallService.startCall(
-                                  consultationId: c.id,
-                                  audioOnly: c.type.toUpperCase() == 'AUDIO',
-                                );
-                                // Automatically hide the consultation from the dashboard once the call loop finishes
-                                if (mounted) {
-                                  setState(() {
-                                    _activeConsultations.removeWhere((item) => item.id == c.id);
-                                  });
-                                }
-                                // Secretly tell backend we completed it so it doesn't reappear
-                                try {
-                                  await ConsultationService.updateStatus(c.id, 'COMPLETED');
-                                } catch (_) {}
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: ConnectivityService.instance.currentStatus == NetworkStatus.offline
-                                  ? Colors.orangeAccent
-                                  : (c.type.toUpperCase() == 'AUDIO' ? Colors.blueAccent : AppColors.primaryAccent),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: Text(
-                              ConnectivityService.instance.currentStatus == NetworkStatus.offline
-                                  ? 'Record Note'
-                                  : (c.type.toUpperCase() == 'AUDIO' ? 'Audio' : 'Join'),
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 12),
+                    _buildServicesGrid(contentW),
+
+                    const SizedBox(height: 28),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                      child: GhSectionHeader(
+                        title: context.tr('our_specialists'),
+                        actionLabel: context.tr('explore_all'),
+                        onAction: () => context.go('/main/doctors'),
                       ),
                     ),
-                  )),
-                  const SizedBox(height: 24),
-                ],
-
-                // Services grid
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                  child: Text(
-                    context.tr('our_services'),
-                    style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDark),
-                  ),
+                    const SizedBox(height: 8),
+                    _buildSpecialistChips(),
+                    const SizedBox(height: 14),
+                    _buildDoctorsSection(contentW),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: _categories
-                        .map((cat) => _buildServiceCard(cat, w))
-                        .toList(),
-                  ),
-                ),
-
-                // Specialists section
-                const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        context.tr('our_specialists'),
-                        style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark),
-                      ),
-                      GestureDetector(
-                        onTap: () => context.go('/main/doctors'),
-                        child: Text(
-                          context.tr('explore_all'),
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 44,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    itemCount: _specialistKeys.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (_, i) {
-                      final key = _specialistKeys[i];
-                      final isActive = _selectedSpecialistKey == key;
-                      return GestureDetector(
-                        onTap: () =>
-                            setState(() => _selectedSpecialistKey = key),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isActive
-                                ? AppColors.primaryAccent
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(
-                                color: isActive
-                                    ? AppColors.primaryAccent
-                                    : const Color(0xFFEEEEEE)),
-                          ),
-                          child: Text(
-                            context.tr(key),
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: isActive
-                                  ? AppColors.textDark
-                                  : Colors.grey[600],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // Doctor carousel
-                const SizedBox(height: 12),
-                if (_doctorsLoading)
-                  const SizedBox(
-                    height: 170,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (_filteredDoctors.isEmpty)
-                  SizedBox(
-                    height: 170,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.person_off_outlined, size: 36, color: Colors.grey[400]),
-                          const SizedBox(height: 8),
-                          Text('No doctors found', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  SizedBox(
-                    height: 170,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      itemCount: _filteredDoctors.length,
-                      itemBuilder: (_, i) => _buildDoctorCard(_filteredDoctors[i], w),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
 
           // Floating chatbot FAB
           Positioned(
-            bottom: 90,
+            bottom: 96,
             right: 20,
-            child: GestureDetector(
-              onTap: () => context.push('/chatbot'),
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primaryAccent, Color(0xFFA8E063)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primaryAccent.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    )
+            child: _buildAssistantFab(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────────────────────
+
+  Widget _buildHeader() {
+    final name = _displayName;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _hPad),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const ConnectivityBadge(),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (name.isNotEmpty)
+                      Text(
+                        context.tr('greeting'),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    const SizedBox(height: 2),
+                    Text(
+                      name.isNotEmpty ? name : context.tr('greeting'),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                        letterSpacing: -0.5,
+                        height: 1.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
-                child: const Icon(Icons.insights,
-                    size: 28, color: AppColors.textDark),
               ),
-            ),
+              const SizedBox(width: 12),
+              const GhLanguageChip(),
+              const SizedBox(width: 8),
+              _iconButton(Icons.notifications_none_rounded,
+                  () => context.push('/notifications')),
+              const SizedBox(width: 8),
+              _buildAvatar(),
+            ],
           ),
         ],
       ),
@@ -598,135 +324,642 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _iconButton(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 4)],
-        ),
-        child: Icon(icon, size: 24, color: AppColors.textDark),
-      ),
-    );
-  }
-
-  Widget _buildServiceCard(Map cat, double screenW) {
-    return GestureDetector(
-      onTap: () => _handleCategoryTap(cat['id'] as String),
-      child: SizedBox(
-        width: (screenW - 56) / 2,
-        height: 150,
-        child: GlassCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: cat['color'] as Color,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(cat['icon'] as IconData,
-                    size: 28, color: AppColors.textDark),
-              ),
-              Text(
-                context.tr(cat['titleKey'] as String),
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark),
-                maxLines: 2,
-              ),
-            ],
+    return Tooltip(
+      message: 'Notifications',
+      child: Material(
+        color: GhTokens.surface,
+        shape: const CircleBorder(side: BorderSide(color: GhTokens.border)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, size: 22, color: AppColors.textDark),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDoctorCard(DoctorModel doc, double screenW) {
-    return GestureDetector(
-      onTap: () => context.push('/doctor-details/${doc.id}'),
+  Widget _buildAvatar() {
+    return Tooltip(
+      message: 'Profile',
+      child: Material(
+        color: AppColors.leafGreenPale,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => context.go('/main/profile'),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Text(
+                _userName.isNotEmpty ? _userName[0] : '?',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.leafGreenPrimary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Banner ────────────────────────────────────────────────────────────────
+
+  Widget _buildBanner() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _hPad),
       child: Container(
-        width: screenW * 0.75,
-        margin: const EdgeInsets.only(right: 16),
-        child: GlassCard(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: AppColors.leafGradientHero,
+          borderRadius: BorderRadius.circular(GhTokens.radiusLg),
+          boxShadow: GhTokens.shadowMd,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: CachedNetworkImage(
-                      imageUrl: doc.image,
-                      width: 90,
-                      height: 90,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        width: 90, height: 90,
-                        decoration: BoxDecoration(
-                          color: AppColors.leafGreenPale,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          doc.name.isNotEmpty ? doc.name[0].toUpperCase() : '?',
-                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.leafGreenPrimary),
+                  Text(
+                    context.tr('free_checkup'),
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    context.tr('checkup_subtitle'),
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.4,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => context.push('/notifications'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.textDark,
+                      minimumSize: const Size(0, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    child: Text(context.tr('learn_more')),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(GhTokens.radiusMd),
+                border:
+                    Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              ),
+              child: const Icon(Icons.health_and_safety_outlined,
+                  size: 28, color: AppColors.leafGreenAccent),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Active consultations ──────────────────────────────────────────────────
+
+  Widget _buildActiveConsultations() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(_hPad, 24, _hPad, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GhSectionHeader(
+            title: 'Your Active Consultations',
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.leafGreenPale,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${_activeConsultations.length}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.leafGreenPrimary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._activeConsultations
+              .map((c) => _buildConsultationCard(c))
+              .toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConsultationCard(ConsultationModel c) {
+    final isOffline =
+        ConnectivityService.instance.currentStatus == NetworkStatus.offline;
+    final isAudio = c.type.toUpperCase() == 'AUDIO';
+    final actionLabel = isOffline ? 'Record Note' : (isAudio ? 'Audio' : 'Join');
+    final actionIcon = isOffline
+        ? Icons.mic_none_rounded
+        : (isAudio ? Icons.call_rounded : Icons.videocam_rounded);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: GhTokens.surface,
+        borderRadius: BorderRadius.circular(GhTokens.radiusMd),
+        border: Border.all(color: GhTokens.border),
+        boxShadow: GhTokens.shadowSm,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.leafGreenPale,
+              borderRadius: BorderRadius.circular(GhTokens.radiusSm),
+            ),
+            child: Icon(
+              isAudio ? Icons.call_rounded : Icons.videocam_rounded,
+              size: 22,
+              color: AppColors.leafGreenPrimary,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  c.reason.isNotEmpty ? c.reason : 'Consultation',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppColors.leafGreenLight,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Ready to join',
+                      style:
+                          TextStyle(fontSize: 13, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            onPressed: () => _onConsultationAction(c),
+            icon: Icon(actionIcon, size: 18),
+            label: Text(actionLabel),
+            style: FilledButton.styleFrom(
+              backgroundColor:
+                  isOffline ? AppColors.warning : AppColors.leafGreenPrimary,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              textStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Services ──────────────────────────────────────────────────────────────
+
+  Widget _buildServicesGrid(double contentW) {
+    const gap = 12.0;
+    final cols = contentW >= 900 ? 6 : (contentW >= 600 ? 3 : 2);
+    final itemW = (contentW - _hPad * 2 - gap * (cols - 1)) / cols;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _hPad),
+      child: Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: _categories
+            .map((cat) => SizedBox(width: itemW, child: _buildServiceCard(cat)))
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildServiceCard(Map cat) {
+    final isEmergency = cat['id'] == '5';
+    final radius = BorderRadius.circular(GhTokens.radiusMd);
+    return Material(
+      color: GhTokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: const BorderSide(color: GhTokens.border),
+      ),
+      child: InkWell(
+        borderRadius: radius,
+        onTap: () => _handleCategoryTap(cat['id'] as String),
+        child: SizedBox(
+          height: 124,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: cat['color'] as Color,
+                        borderRadius:
+                            BorderRadius.circular(GhTokens.radiusSm),
+                      ),
+                      child: Icon(
+                        cat['icon'] as IconData,
+                        size: 22,
+                        color: isEmergency
+                            ? AppColors.emergency
+                            : AppColors.textDark,
+                      ),
+                    ),
+                    const Spacer(),
+                    const Icon(Icons.arrow_outward_rounded,
+                        size: 18, color: AppColors.textMuted),
+                  ],
+                ),
+                Text(
+                  context.tr(cat['titleKey'] as String),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Specialists ───────────────────────────────────────────────────────────
+
+  Widget _buildSpecialistChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: _hPad),
+        itemCount: _specialistKeys.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final key = _specialistKeys[i];
+          final isActive = _selectedSpecialistKey == key;
+          return Semantics(
+            button: true,
+            selected: isActive,
+            child: Material(
+              color:
+                  isActive ? AppColors.leafGreenPrimary : GhTokens.surface,
+              shape: StadiumBorder(
+                side: BorderSide(
+                  color: isActive
+                      ? AppColors.leafGreenPrimary
+                      : GhTokens.border,
+                ),
+              ),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: () => setState(() => _selectedSpecialistKey = key),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Center(
+                    widthFactor: 1,
+                    child: Text(
+                      context.tr(key),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isActive ? Colors.white : AppColors.textMedium,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDoctorsSection(double contentW) {
+    const listHeight = 156.0;
+    final cardW = math.min(contentW * 0.8, 340.0);
+
+    if (_doctorsLoading) {
+      return SizedBox(
+        height: listHeight,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: _hPad),
+          itemCount: 3,
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          itemBuilder: (_, __) => _buildDoctorSkeleton(cardW),
+        ),
+      );
+    }
+
+    if (_filteredDoctors.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: _hPad),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+          decoration: BoxDecoration(
+            color: GhTokens.surface,
+            borderRadius: BorderRadius.circular(GhTokens.radiusMd),
+            border: Border.all(color: GhTokens.border),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: AppColors.leafBg,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.person_search_outlined,
+                    size: 24, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'No doctors found',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: listHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: _hPad),
+        itemCount: _filteredDoctors.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (_, i) => _buildDoctorCard(_filteredDoctors[i], cardW),
+      ),
+    );
+  }
+
+  Widget _buildDoctorSkeleton(double cardW) {
+    Widget bar(double w, double h) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: AppColors.leafBg,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        );
+    return Container(
+      width: cardW,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: GhTokens.surface,
+        borderRadius: BorderRadius.circular(GhTokens.radiusMd),
+        border: Border.all(color: GhTokens.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: AppColors.leafBg,
+              borderRadius: BorderRadius.circular(GhTokens.radiusSm),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                bar(120, 14),
+                const SizedBox(height: 8),
+                bar(80, 12),
+                const SizedBox(height: 16),
+                bar(double.infinity, 36),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDoctorCard(DoctorModel doc, double cardW) {
+    final radius = BorderRadius.circular(GhTokens.radiusMd);
+    return SizedBox(
+      width: cardW,
+      child: Material(
+        color: GhTokens.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: const BorderSide(color: GhTokens.border),
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: () => context.push('/doctor-details/${doc.id}'),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(GhTokens.radiusSm),
+                  child: CachedNetworkImage(
+                    imageUrl: doc.image,
+                    width: 72,
+                    height: 72,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) =>
+                        Container(color: AppColors.leafGreenPale),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 72,
+                      height: 72,
+                      color: AppColors.leafGreenPale,
+                      alignment: Alignment.center,
+                      child: Text(
+                        doc.name.isNotEmpty ? doc.name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.leafGreenPrimary,
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('Dr. ${doc.name}',
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textDark),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(doc.specialization,
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        maxLines: 1),
-                    if (doc.hospital != null && doc.hospital!.isNotEmpty) ...[  
-                      const SizedBox(height: 2),
-                      Text(doc.hospital!,
-                        style: TextStyle(fontSize: 10, color: Colors.grey[500]),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                    const SizedBox(height: 10),
-                    GestureDetector(
-                      onTap: () => context.push(
-                        '/teleconsultation-request',
-                        extra: {'doctorId': doc.id, 'doctorName': doc.name},
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.textDark,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          context.tr('book_now'),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-              ),
-            ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Dr. ${doc.name}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        doc.specialization,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.leafGreenPrimary,
+                        ),
+                      ),
+                      if (doc.hospital != null && doc.hospital!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined,
+                                size: 12, color: AppColors.textMuted),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                doc.hospital!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 36,
+                        child: FilledButton(
+                          onPressed: () => context.push(
+                            '/teleconsultation-request',
+                            extra: {'doctorId': doc.id, 'doctorName': doc.name},
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.textDark,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          child: Text(context.tr('book_now')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Assistant FAB ─────────────────────────────────────────────────────────
+
+  Widget _buildAssistantFab() {
+    return Tooltip(
+      message: 'AI Assistant',
+      child: Material(
+        color: AppColors.leafGreenPrimary,
+        shape: const CircleBorder(),
+        elevation: 6,
+        shadowColor: AppColors.leafGreenPrimary.withValues(alpha: 0.4),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => context.push('/chatbot'),
+          child: const SizedBox(
+            width: 56,
+            height: 56,
+            child: Icon(Icons.insights, size: 26, color: Colors.white),
           ),
         ),
       ),
